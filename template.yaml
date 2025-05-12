@@ -1,86 +1,96 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Slack 映画推薦ボット (filmate)
-
-Parameters:
-  SecretArn:
-    Type: String
-    Description: SecretsManager の ARN (slack_bot_token などを含む)
-  SessionsTableName:
-    Type: String
-    Default: filmSessions
-    Description: DynamoDB テーブル名
-  ChatHandlerName:
-    Type: String
-    Default: filmChatFlow
-    Description: filmChatFlow Lambda 関数名
+Description: Slack で映画を 3本おすすめする Bot
 
 Globals:
   Function:
-    Timeout: 10
     Runtime: python3.9
+    Timeout: 10
+    MemorySize: 256
     Environment:
       Variables:
-        SLACK_SECRET_ID: !Ref SecretArn
-        SESSIONS_TABLE: !Ref SessionsTableName
-        CHAT_HANDLER_NAME: !Ref ChatHandlerName
+        SLACK_SECRET_ID: arn:aws:secretsmanager:ap-northeast-1:088622163445:secret:prod/filmmate/slack-rRHqLA
+        SESSIONS_TABLE: !Ref FilmChatSessions
+        CHAT_HANDLER_NAME: !GetAtt FilmChatFlowFunction.FunctionName
 
 Resources:
-
-  ## DynamoDB テーブル
-  FilmSessionsTable:
-    Type: AWS::DynamoDB::Table
+  # DynamoDB テーブル
+  SessionsTable:
+    Type: AWS::Serverless::SimpleTable
     Properties:
-      TableName: !Ref SessionsTableName
-      AttributeDefinitions:
-        - AttributeName: sessionId
-          AttributeType: S
-      KeySchema:
-        - AttributeName: sessionId
-          KeyType: HASH
-      BillingMode: PAY_PER_REQUEST
-      TimeToLiveSpecification:
-        AttributeName: ttl
-        Enabled: true
+      TableName: filmate-sessions
+      PrimaryKey:
+        Name: sessionId
+        Type: String
 
-  ## filmChatEntry 関数 (slash コマンド用)
+  # HTTP API をまとめる
+  FilmateApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: prod
+
+  # /filmChatEntry 用 Lambda
   FilmChatEntryFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: filmChatEntry.lambda_handler
-      CodeUri: filmChatEntry/
+      CodeUri: src/filmChatEntry/
+      Handler: app.lambda_handler
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SessionsTable
+        - SecretsManagerReadPolicy:
+            SecretId: !Ref SLACK_SECRET_ID
+        - Statement:
+            Effect: Allow
+            Action: lambda:InvokeFunction
+            Resource: !GetAtt FilmChatFlowFunction.Arn
       Events:
-        SlashCommand:
-          Type: Api
+        FilmChatEntry:
+          Type: HttpApi
           Properties:
+            ApiId: !Ref FilmateApi
             Path: /filmChatEntry
-            Method: post
+            Method: POST
+        FilmEvents:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref FilmateApi
+            Path: /events
+            Method: POST
 
-  ## filmChatFlow 関数 (会話フロー用)
+  # 会話フロー処理 Lambda
   FilmChatFlowFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: filmChatFlow.lambda_handler
-      CodeUri: filmChatFlow/
+      CodeUri: src/filmChatFlow/
+      Handler: app.lambda_handler
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SessionsTable
+        - SecretsManagerReadPolicy:
+            SecretId: !Ref SLACK_SECRET_ID
 
-  ## eventsHandler 関数 (Event Subscriptions 用)
+  # Slack イベント受信用 Lambda
   EventsHandlerFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: eventsHandler.lambda_handler
-      CodeUri: eventsHandler/
+      CodeUri: src/eventsHandler/
+      Handler: app.lambda_handler
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - SecretsManagerReadPolicy:
+            SecretId: !Ref SLACK_SECRET_ID
       Events:
         SlackEvents:
-          Type: Api
+          Type: HttpApi
           Properties:
+            ApiId: !Ref FilmateApi
             Path: /events
-            Method: post
+            Method: POST
 
 Outputs:
-  FilmChatEntryApi:
-    Description: "/filmChatEntry" のエンドポイント
-    Value: !Sub https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/filmChatEntry
-
-  EventsApi:
-    Description: "/events" のエンドポイント
-    Value: !Sub https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/events
+  HttpApiUrl:
+    Description: "Bot の HTTP API エンドポイント"
+    Value: !Sub "https://${FilmateApi}.execute-api.${AWS::Region}.amazonaws.com"
