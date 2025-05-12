@@ -2,7 +2,9 @@
 
 Slack の会話から映画を 3本おすすめする Bot
 ![サンプル画像](images/Sample.png)
-
+![サンプル画像](images/Sample2.png)
+![サンプル画像](images/Sample3.png)
+![サンプル画像](images/Sample4.png)
 ## 前提条件
 
 1. AWS アカウント・CLI（`aws configure`）  
