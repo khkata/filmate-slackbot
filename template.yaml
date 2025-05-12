@@ -1,87 +1,90 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Slack で映画を 3本おすすめする Bot
+Description: Slack で映画を 3 本おすすめする Bot
 
 Globals:
   Function:
     Runtime: python3.9
     Timeout: 10
     MemorySize: 256
-    Environment:
-      Variables:
-        SLACK_SECRET_ID: arn:aws:secretsmanager:ap-northeast-1:088622163445:secret:prod/filmmate/slack-rRHqLA
-        SESSIONS_TABLE: !Ref FilmChatSessions
-        CHAT_HANDLER_NAME: !GetAtt FilmChatFlowFunction.FunctionName
 
 Resources:
   # DynamoDB テーブル
   SessionsTable:
     Type: AWS::Serverless::SimpleTable
     Properties:
-      TableName: filmate-sessions
+      TableName: FileChatSessions
       PrimaryKey:
         Name: sessionId
         Type: String
 
-  # HTTP API をまとめる
+  # HTTP API 定義
   FilmateApi:
     Type: AWS::Serverless::HttpApi
     Properties:
       StageName: prod
 
-  # /filmChatEntry 用 Lambda
+  # 1) /filmChatEntry スラッシュコマンド受信用 Lambda
   FilmChatEntryFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: src/filmChatEntry/
       Handler: app.lambda_handler
+      Environment:
+        Variables:
+          SLACK_BOT_TOKEN: '{{resolve:secretsmanager:arn:aws:secretsmanager:ap-northeast-1:088622163445:secret:prod/filmmate/slack-rRHqLA:SecretString:slack_bot_token}}'
+          SLACK_SIGNING_SECRET: '{{resolve:secretsmanager:arn:aws:secretsmanager:ap-northeast-1:088622163445:secret:prod/filmmate/slack-rRHqLA:SecretString:slack_signing_secret}}'
+          TMDB_KEY: '{{resolve:secretsmanager:arn:aws:secretsmanager:ap-northeast-1:088622163445:secret:prod/filmmate/slack-rRHqLA:SecretString:tmdb_key}}'
+          SESSIONS_TABLE: !Ref SessionsTable
+          CHAT_HANDLER_NAME: !GetAtt FilmChatFlowFunction.FunctionName
       Policies:
         - AWSLambdaBasicExecutionRole
         - DynamoDBCrudPolicy:
             TableName: !Ref SessionsTable
-        - SecretsManagerReadPolicy:
-            SecretId: !Ref SLACK_SECRET_ID
+        - AWSSecretsManagerGetSecretValuePolicy:
+            SecretArn: arn:aws:secretsmanager:ap-northeast-1:088622163445:secret:prod/filmmate/slack-rRHqLA
         - Statement:
-            Effect: Allow
-            Action: lambda:InvokeFunction
-            Resource: !GetAtt FilmChatFlowFunction.Arn
+            - Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource: !GetAtt FilmChatFlowFunction.Arn
       Events:
-        FilmChatEntry:
+        SlashCommand:
           Type: HttpApi
           Properties:
             ApiId: !Ref FilmateApi
             Path: /filmChatEntry
             Method: POST
-        FilmEvents:
-          Type: HttpApi
-          Properties:
-            ApiId: !Ref FilmateApi
-            Path: /events
-            Method: POST
 
-  # 会話フロー処理 Lambda
+  # 2) 会話フロー実行用 Lambda（内部呼び出し）
   FilmChatFlowFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: src/filmChatFlow/
       Handler: app.lambda_handler
+      Environment:
+        Variables:
+          SESSIONS_TABLE: !Ref SessionsTable
       Policies:
         - AWSLambdaBasicExecutionRole
         - DynamoDBCrudPolicy:
             TableName: !Ref SessionsTable
-        - SecretsManagerReadPolicy:
-            SecretId: !Ref SLACK_SECRET_ID
+        - AWSSecretsManagerGetSecretValuePolicy:
+            SecretArn: arn:aws:secretsmanager:ap-northeast-1:088622163445:secret:prod/filmmate/slack-rRHqLA
 
-  # Slack イベント受信用 Lambda
+  # 3) Events API サブスクリプション受信用 Lambda
   EventsHandlerFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: src/eventsHandler/
       Handler: app.lambda_handler
+      Environment:
+        Variables:
+          SLACK_SIGNING_SECRET: '{{resolve:secretsmanager:arn:aws:secretsmanager:ap-northeast-1:088622163445:secret:prod/filmmate/slack-rRHqLA:SecretString:slack_signing_secret}}'
       Policies:
         - AWSLambdaBasicExecutionRole
-        - SecretsManagerReadPolicy:
-            SecretId: !Ref SLACK_SECRET_ID
+        - AWSSecretsManagerGetSecretValuePolicy:
+            SecretArn: arn:aws:secretsmanager:ap-northeast-1:088622163445:secret:prod/filmmate/slack-rRHqLA
       Events:
         SlackEvents:
           Type: HttpApi
@@ -92,5 +95,5 @@ Resources:
 
 Outputs:
   HttpApiUrl:
-    Description: "Bot の HTTP API エンドポイント"
-    Value: !Sub "https://${FilmateApi}.execute-api.${AWS::Region}.amazonaws.com"
+    Description: "Bot の HTTP API ベース URL"
+    Value: !Sub "https://${FilmateApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
