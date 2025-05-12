@@ -1,0 +1,86 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Slack 映画推薦ボット (filmate)
+
+Parameters:
+  SecretArn:
+    Type: String
+    Description: SecretsManager の ARN (slack_bot_token などを含む)
+  SessionsTableName:
+    Type: String
+    Default: filmSessions
+    Description: DynamoDB テーブル名
+  ChatHandlerName:
+    Type: String
+    Default: filmChatFlow
+    Description: filmChatFlow Lambda 関数名
+
+Globals:
+  Function:
+    Timeout: 10
+    Runtime: python3.9
+    Environment:
+      Variables:
+        SLACK_SECRET_ID: !Ref SecretArn
+        SESSIONS_TABLE: !Ref SessionsTableName
+        CHAT_HANDLER_NAME: !Ref ChatHandlerName
+
+Resources:
+
+  ## DynamoDB テーブル
+  FilmSessionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref SessionsTableName
+      AttributeDefinitions:
+        - AttributeName: sessionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: sessionId
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  ## filmChatEntry 関数 (slash コマンド用)
+  FilmChatEntryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: filmChatEntry.lambda_handler
+      CodeUri: filmChatEntry/
+      Events:
+        SlashCommand:
+          Type: Api
+          Properties:
+            Path: /filmChatEntry
+            Method: post
+
+  ## filmChatFlow 関数 (会話フロー用)
+  FilmChatFlowFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: filmChatFlow.lambda_handler
+      CodeUri: filmChatFlow/
+
+  ## eventsHandler 関数 (Event Subscriptions 用)
+  EventsHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: eventsHandler.lambda_handler
+      CodeUri: eventsHandler/
+      Events:
+        SlackEvents:
+          Type: Api
+          Properties:
+            Path: /events
+            Method: post
+
+Outputs:
+  FilmChatEntryApi:
+    Description: "/filmChatEntry" のエンドポイント
+    Value: !Sub https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/filmChatEntry
+
+  EventsApi:
+    Description: "/events" のエンドポイント
+    Value: !Sub https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/events
