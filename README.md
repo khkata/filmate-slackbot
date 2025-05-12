@@ -80,3 +80,25 @@ sam deploy --guided
 
 # 再デプロイ（2 回目以降はオプション省略可）
 sam deploy
+
+デプロイが成功すると、以下のような出力が表示されます:
+- Key                 HttpApiUrl
+- Description         Bot の HTTP API ベース URL
+- Value               https://xxxxxxx.execute-api.ap-northeast-1.amazonaws.com/prod
+この Value の URL が <あなたのAPIドメイン> に該当します。
+
+---
+
+## 環境変数について
+
+以下の環境変数は、`template.yaml` の `Environment.Variables` によって自動的に設定されます。
+
+| 変数名               | 内容                                                        |
+|----------------------|-------------------------------------------------------------|
+| `SLACK_BOT_TOKEN`      | Secrets Manager から取得される Slack Bot のトークン        |
+| `SLACK_SIGNING_SECRET` | Secrets Manager から取得される署名検証用のシークレット     |
+| `TMDB_KEY`             | TMDB の API キー                                            |
+| `SESSIONS_TABLE`       | 使用する DynamoDB テーブル名（例: `FileChatSessions`）     |
+| `CHAT_HANDLER_NAME`    | 会話フロー実行用の Lambda 関数名                           |
+
+---
