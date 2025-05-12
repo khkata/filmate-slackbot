@@ -1,6 +1,7 @@
 # filmate-slackbot
 
 Slack の会話から映画を 3本おすすめする Bot
+![Test Image 1](image/スクリーンショット 2025-05-12 12.13.31.png)
 
 ## 前提条件
 
