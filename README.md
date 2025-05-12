@@ -44,4 +44,39 @@ Slack 上で `/filmate` コマンドを打つと、TMDB から取得した映画
 ### 1. Slash Command
 
 - コマンド: `/filmate`  
-- Request URL:  
+- Request URL: https://<あなたのAPIドメイン>/prod/filmChatEntry
+- Method: `POST`  
+
+### 2. Event Subscriptions
+
+- Enable Events: ✅  
+- Request URL: https://<あなたのAPIドメイン>/prod/events
+
+- Subscribe to bot events:
+- `message.channels`  
+- `message.im`  
+
+### 3. OAuth & Permissions
+
+- 権限スコープ:
+- `commands`  
+- `chat:write`  
+- `incoming-webhook`  
+
+---
+
+## 1-Click Deploy 手順
+
+```bash
+# リポジトリをクローン
+git clone https://github.com/<あなたのユーザ名>/filmate-slackbot.git
+cd filmate-slackbot
+
+# SAM ビルド
+sam build
+
+# 初回デプロイ（設定ガイド付き）
+sam deploy --guided
+
+# 再デプロイ（2 回目以降はオプション省略可）
+sam deploy
